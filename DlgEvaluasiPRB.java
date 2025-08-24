@@ -45,10 +45,7 @@ public final class DlgEvaluasiPRB extends javax.swing.JDialog {
     private int i = 0;
     private WarnaTable warna = new WarnaTable();
     private String dataTensi = ""; // Untuk menyimpan data tensi yang dikirim
-    
-    private java.awt.Frame parentFrame;
-    private static java.util.Stack<javax.swing.JDialog> dialogStack = new java.util.Stack<>();
-    
+        
     // Data penyakit PRB dengan mapping ICD-10
     private Map<String, String[]> penyakitICD = new HashMap<>();
     
@@ -180,20 +177,6 @@ public final class DlgEvaluasiPRB extends javax.swing.JDialog {
     // Prevent form from auto-closing
     setDefaultCloseOperation(javax.swing.WindowConstants.DO_NOTHING_ON_CLOSE);
     
-    this.addWindowListener(new java.awt.event.WindowAdapter() {
-            @Override
-            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
-                closeDialog();
-            }
-            
-            @Override
-            public void windowClosed(java.awt.event.WindowEvent windowEvent) {
-                if (!dialogStack.isEmpty() && dialogStack.peek() == DlgEvaluasiPRB.this) {
-                    dialogStack.pop();
-                }
-            }
-        });
-    
     // Initialize table model dengan 9 kolom
     tabMode = new DefaultTableModel(null, new Object[]{
         "No.Rawat", "No.RM", "Nama Pasien", "Jenis Penyakit", "Kode ICD-10", "Persentase", "Kesimpulan", "Tanggal Evaluasi", "Keterangan"
@@ -318,40 +301,6 @@ public final class DlgEvaluasiPRB extends javax.swing.JDialog {
 
     System.out.println("=== KONSTRUKTOR SELESAI ===");
 }
-
-private void closeDialog() {
-        try {
-            // Cleanup database resources
-            if (rs != null && !rs.isClosed()) {
-                rs.close();
-            }
-            if (ps != null && !ps.isClosed()) {
-                ps.close();
-            }
-        } catch (SQLException e) {
-            System.out.println("Error closing database connections: " + e);
-        }
-        
-        // Remove from stack
-        if (!dialogStack.isEmpty() && dialogStack.peek() == this) {
-            dialogStack.pop();
-        }
-        
-        // PERBAIKAN: Proper parent visibility management
-        this.setVisible(false);
-        
-        // Show parent if exists and make it active
-        if (parentFrame != null) {
-            SwingUtilities.invokeLater(() -> {
-                parentFrame.setVisible(true);
-                parentFrame.setState(java.awt.Frame.NORMAL); // Restore if minimized
-                parentFrame.toFront();
-                parentFrame.requestFocus();
-            });
-        }
-        
-        this.dispose();
-    }
 
     private void initializeICDMappings() {
         // Angina Pektoris
@@ -2121,14 +2070,16 @@ private void showConclusionDialog(double persentase) {
     // Options yang konsisten untuk kedua skenario
     String[] options = {"Rujukan PRB", "Surat Kontrol", "Selesai"};
     
-    int response = JOptionPane.showOptionDialog(this,
+    int response = JOptionPane.showOptionDialog(
+        this,
         message,
         title,
         JOptionPane.YES_NO_CANCEL_OPTION,
         JOptionPane.INFORMATION_MESSAGE,
         null,
         options,
-        persentase >= 50 ? options[0] : options[1]); // Default berdasarkan hasil
+        persentase >= 50 ? options[0] : options[1] // Default berdasarkan hasil
+    ); 
    
     switch (response) {
         case 0: // Rujukan PRB
@@ -2335,7 +2286,7 @@ private void handleSuratKontrolChoice() {
             // Hasil akhir
             if (updateSuccess) {
                 txtKeterangan.setText(keterangan.trim());
-                JOptionPane.showMessageDialog(this, "Keterangan berhasil disimpan!");
+                //JOptionPane.showMessageDialog(this, "Keterangan berhasil disimpan!");
                 tampil(); // Refresh tabel
                 
                 // Buka form surat kontrol
@@ -2570,88 +2521,206 @@ private boolean validateFormForSuratKontrol() {
 }
 
 private void openBPJSProgramPRB() {
-        try {
-            // Ambil data yang diperlukan
-            String noRawat = NoRawat.getText().trim();
-            String noSep = getNoSEPFromDatabase(noRawat);
-            String noKartu = getNoKartuFromDatabase(noRawat);
-            String noRM = NoRM.getText().trim();
-            String namaPasien = NmPasien.getText().trim();
-            String alamat = getAlamatFromDatabase(noRawat);
-            String email = getEmailFromDatabase(noRawat);
-            String kodeDPJP = getDokterDPJPFromDatabase(noRawat);
-            String namaDPJP = getNamaDokterDPJPFromDatabase(kodeDPJP);
-            
-            // STRATEGI 1: CLOSE CURRENT DIALOG FIRST (RECOMMENDED)
-            SwingUtilities.invokeLater(new Runnable() {
-                @Override
-                public void run() {
-                    try {
+    // PERBAIKAN: Cek apakah ada data di form (dari input manual atau tabel) 
+    final String noRawatToUse;
+    final String noRMToUse;
+    final String nmPasienToUse;
+    
+    // Prioritas 1: Jika ada data yang dipilih di tabel
+    if(tabMode.getRowCount() > 0 && tbEvaluasiPRB.getSelectedRow() != -1) {
+        int selectedRow = tbEvaluasiPRB.getSelectedRow();
+        int modelRow = tbEvaluasiPRB.convertRowIndexToModel(selectedRow);
+        
+        noRawatToUse = tabMode.getValueAt(modelRow, 0).toString();
+        noRMToUse = tabMode.getValueAt(modelRow, 1).toString();
+        nmPasienToUse = tabMode.getValueAt(modelRow, 2).toString();
+        
+        System.out.println("Mode: Data dari tabel terpilih");
+        System.out.println("NoRawat: " + noRawatToUse);
+    }
+    // Prioritas 2: Jika tidak ada yang dipilih tapi ada data di form field
+    else if(!NoRawat.getText().trim().equals("") && !NoRM.getText().trim().equals("")) {
+        noRawatToUse = NoRawat.getText().trim();
+        noRMToUse = NoRM.getText().trim();
+        nmPasienToUse = NmPasien.getText().trim();
+        
+        System.out.println("Mode: Data dari form field");
+        System.out.println("NoRawat: " + noRawatToUse);
+    }
+    // Prioritas 3: Tidak ada data sama sekali
+    else {
+        if(tabMode.getRowCount() == 0) {
+            JOptionPane.showMessageDialog(null, "Maaf, data pasien sudah habis...!!!!");
+            TCari.requestFocus();
+        } else {
+            JOptionPane.showMessageDialog(null, "Maaf, Silahkan anda pilih dulu data registrasi pada table...!!!");
+            tbEvaluasiPRB.requestFocus();
+        }
+        return;
+    }
+    
+    // Validasi data yang akan digunakan
+    if(noRawatToUse.equals("")) {
+        JOptionPane.showMessageDialog(null, "No Rawat tidak ditemukan!");
+        return;
+    }
+    
+    if(nmPasienToUse.equals("")) {
+        JOptionPane.showMessageDialog(null, "Data pasien tidak lengkap!");
+        return;
+    }
+    
+    try {
+        SwingUtilities.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                PreparedStatement pskasir = null;
+                ResultSet rskasir = null;
+                
+                try {
+                    // Query data seperti di contoh - dengan penyesuaian untuk DlgEvaluasiPRB
+                    pskasir = koneksi.prepareStatement(
+                        "select bridging_sep.no_sep,bridging_sep.no_kartu,bridging_sep.kddpjp,bridging_sep.nmdpdjp," +
+                        "concat(pasien.alamat,', ',kelurahan.nm_kel,', ',kecamatan.nm_kec,', ',kabupaten.nm_kab) as alamat,pasien.email " +
+                        "from bridging_sep inner join pasien on bridging_sep.nomr=pasien.no_rkm_medis " +
+                        "inner join kelurahan on pasien.kd_kel=kelurahan.kd_kel " +
+                        "inner join kecamatan on pasien.kd_kec=kecamatan.kd_kec " +
+                        "inner join kabupaten on pasien.kd_kab=kabupaten.kd_kab where bridging_sep.no_rawat=?"
+                    );
+                    
+                    pskasir.setString(1, noRawatToUse);
+                    rskasir = pskasir.executeQuery();
+                    
+                    if(rskasir.next()) {
                         // Hide current dialog
                         DlgEvaluasiPRB.this.setVisible(false);
+                        DlgEvaluasiPRB.this.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
                         
-                        // Create new dialog dengan PARENT ASLI (bukan this)
-                        BPJSProgramPRB bpjsPRB = new BPJSProgramPRB(parentFrame, true);
+                        // Create BPJSProgramPRB dengan data - sesuai contoh
+                        BPJSProgramPRB form = new BPJSProgramPRB(null,false);
                         
-                        // Set data
-                        bpjsPRB.setNoRm(noRawat, noSep, noKartu, noRM, namaPasien, alamat, email, kodeDPJP, namaDPJP);
+                        // Set data seperti di contoh - gunakan variabel final
+                        form.setNoRm(
+                            noRawatToUse,                          // No Rawat
+                            rskasir.getString("no_sep"),           // No SEP
+                            rskasir.getString("no_kartu"),         // No Kartu
+                            noRMToUse,                             // No RM
+                            nmPasienToUse,                         // Nama Pasien
+                            rskasir.getString("alamat"),           // Alamat lengkap
+                            rskasir.getString("email"),            // Email
+                            rskasir.getString("kddpjp"),           // Kode DPJP
+                            rskasir.getString("nmdpdjp")           // Nama DPJP
+                        );
                         
-                        bpjsPRB.setSize(internalFrame1.getWidth() - 20, internalFrame1.getHeight() - 20);
-                        bpjsPRB.setLocationRelativeTo(parentFrame);
+                        form.setSize(internalFrame1.getWidth()-20,internalFrame1.getHeight()-20);
+                        form.setLocationRelativeTo(internalFrame1);
                         
-                        // Add listener untuk kembali ke current dialog jika diperlukan
-                        bpjsPRB.addWindowListener(new java.awt.event.WindowAdapter() {
-                            @Override
-                            public void windowClosed(java.awt.event.WindowEvent e) {
-                                // OPTIONAL: Show current dialog again if needed
-                                // DlgEvaluasiPRB.this.setVisible(true);
-                                // OR: Show parent
-                                if (parentFrame != null) {
-                                    parentFrame.setVisible(true);
-                                    parentFrame.toFront();
-                                }
-                            }
-                        });
                         
-                        bpjsPRB.setVisible(true);
+                        // Add listener untuk handle close
+                        form.addWindowListener(new java.awt.event.WindowAdapter() {
+    @Override
+    public void windowClosed(java.awt.event.WindowEvent e) {
+        if (internalFrame1 != null) {
+            internalFrame1.setVisible(true);
+//            internalFrame1.toFront();
+        }
+        DlgEvaluasiPRB.this.setVisible(true); // pastikan dialog utama muncul kembali
+        DlgEvaluasiPRB.this.setCursor(Cursor.getDefaultCursor());
+    }
+});
                         
-                        // Dispose current dialog to free up resources
-                        DlgEvaluasiPRB.this.dispose();
+                        form.setVisible(true);
                         
-                    } catch (Exception e) {
-                        System.out.println("Error opening BPJSProgramPRB: " + e);
-                        JOptionPane.showMessageDialog(parentFrame,
-                            "Tidak dapat membuka form rujukan PRB: " + e.getMessage());
+                        // Dispose current dialog
+                        //DlgEvaluasiPRB.this.dispose();
                         
-                        // Show current dialog back if error
+                    } else {
+                        // Data SEP tidak ditemukan
+                        JOptionPane.showMessageDialog(internalFrame1, 
+                            "Pasien tersebut belum terbit SEP, silahkan hubungi bagian terkait..!!");
+                        TCari.requestFocus();
                         DlgEvaluasiPRB.this.setVisible(true);
                     }
+                    
+                } catch (SQLException e) {
+                    System.out.println("Database Error: " + e.getMessage());
+                    JOptionPane.showMessageDialog(internalFrame1,
+                        "Error mengambil data: " + e.getMessage());
+                    DlgEvaluasiPRB.this.setVisible(true);
+                    DlgEvaluasiPRB.this.setCursor(Cursor.getDefaultCursor());
+                    
+                } catch (Exception e) {
+                    System.out.println("Error opening BPJSProgramPRB: " + e.getMessage());
+                    JOptionPane.showMessageDialog(internalFrame1,
+                        "Tidak dapat membuka form rujukan PRB: " + e.getMessage());
+                    DlgEvaluasiPRB.this.setVisible(true);
+                    DlgEvaluasiPRB.this.setCursor(Cursor.getDefaultCursor());
+                    
+                } finally {
+                    // Cleanup resources
+                    try {
+                        if(rskasir != null) {
+                            rskasir.close();
+                        }
+                        if(pskasir != null) {
+                            pskasir.close();
+                        }
+                    } catch (SQLException e) {
+                        System.out.println("Error closing resources: " + e.getMessage());
+                    }
                 }
-            });
-        } catch (Exception e) {
-            System.out.println("Error opening BPJSProgramPRB: " + e);
-            JOptionPane.showMessageDialog(this, "Tidak dapat membuka form rujukan PRB: " + e.getMessage());
-        }
+            }
+        });
+        
+    } catch (Exception e) {
+        System.out.println("Error opening BPJSProgramPRB: " + e.getMessage());
+        JOptionPane.showMessageDialog(this, "Tidak dapat membuka form rujukan PRB: " + e.getMessage());
     }
+}
 
 
 private void openBPJSSuratKontrol() {
-    // Validasi data seperti di contoh
-    if(tabModekasir.getRowCount() == 0) {
-        JOptionPane.showMessageDialog(null, "Maaf, table masih kosong...!!!!");
-        TCari.requestFocus();
+    // PERBAIKAN: Cek apakah ada data di form (dari input manual atau tabel)
+    final String noRawatToUse;
+    final String noRMToUse;
+    final String nmPasienToUse;
+    
+    // Prioritas 1: Jika ada data yang dipilih di tabel
+    if(tabMode.getRowCount() > 0 && tbEvaluasiPRB.getSelectedRow() != -1) {
+        int selectedRow = tbEvaluasiPRB.getSelectedRow();
+        int modelRow = tbEvaluasiPRB.convertRowIndexToModel(selectedRow);
+        
+        noRawatToUse = tabMode.getValueAt(modelRow, 0).toString();
+        noRMToUse = tabMode.getValueAt(modelRow, 1).toString();
+        nmPasienToUse = tabMode.getValueAt(modelRow, 2).toString();
+        
+        System.out.println("Mode: Data dari tabel terpilih");
+        System.out.println("NoRawat: " + noRawatToUse);
+    }
+    // Prioritas 2: Jika tidak ada yang dipilih tapi ada data di form field
+    else if(!NoRawat.getText().trim().equals("") && !NoRM.getText().trim().equals("")) {
+        noRawatToUse = NoRawat.getText().trim();
+        noRMToUse = NoRM.getText().trim();
+        nmPasienToUse = NmPasien.getText().trim();
+        
+        System.out.println("Mode: Data dari form field");
+        System.out.println("NoRawat: " + noRawatToUse);
+    }
+    // Prioritas 3: Tidak ada data sama sekali
+    else {
+        if(tabMode.getRowCount() == 0) {
+            JOptionPane.showMessageDialog(null, "Maaf, table masih kosong...!!!!");
+            TCari.requestFocus();
+        } else {
+            JOptionPane.showMessageDialog(null, "Silahkan pilih data dari tabel atau isi data pasien terlebih dahulu!");
+            tbEvaluasiPRB.requestFocus();
+        }
         return;
     }
     
-    if(TNoRw.getText().trim().equals("")) {
-        JOptionPane.showMessageDialog(null, "Maaf, Silahkan anda pilih dulu dengan menklik data pada table...!!!");
-        tbKasirRalan.requestFocus();
-        return;
-    }
-    
-    if(tbKasirRalan.getSelectedRow() == -1) {
-        JOptionPane.showMessageDialog(null, "Maaf, Silahkan anda pilih dulu dengan menklik data pada table...!!!");
-        tbKasirRalan.requestFocus();
+    // Validasi data yang akan digunakan
+    if(noRawatToUse.equals("")) {
+        JOptionPane.showMessageDialog(null, "No Rawat tidak ditemukan!");
         return;
     }
     
@@ -2670,7 +2739,7 @@ private void openBPJSSuratKontrol() {
                         "where bridging_sep.no_rawat=?"
                     );
                     
-                    pskasir.setString(1, TNoRw.getText());
+                    pskasir.setString(1, noRawatToUse);
                     rskasir = pskasir.executeQuery();
                     
                     if(rskasir.next()) {
@@ -2679,43 +2748,45 @@ private void openBPJSSuratKontrol() {
                         DlgEvaluasiPRB.this.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
                         
                         // Create BPJSSuratKontrol dengan data
-                        BPJSSuratKontrol suratKontrol = new BPJSSuratKontrol(parentFrame, true);
+                        BPJSSuratKontrol suratKontrol = new BPJSSuratKontrol(null,false);
                         
-                        // Set data seperti di contoh
+                        // Set data - gunakan data yang sudah divalidasi
                         suratKontrol.setNoRm(
-                            TNoRwCari.getText(),           // No Rawat
-                            rskasir.getString("no_sep"),   // No SEP
-                            rskasir.getString("no_kartu"), // No Kartu
-                            TNoRMCari.getText(),           // No RM
-                            TPasienCari.getText(),         // Nama Pasien
+                            noRawatToUse,                      // No Rawat  
+                            rskasir.getString("no_sep"),       // No SEP
+                            rskasir.getString("no_kartu"),     // No Kartu
+                            noRMToUse,                         // No RM
+                            nmPasienToUse,                     // Nama Pasien
                             rskasir.getString("tanggal_lahir"), // Tanggal Lahir
-                            rskasir.getString("jkel"),     // Jenis Kelamin
+                            rskasir.getString("jkel"),         // Jenis Kelamin
                             rskasir.getString("nmdiagnosaawal") // Diagnosis Awal
                         );
                         
                         suratKontrol.setSize(internalFrame1.getWidth() - 20, internalFrame1.getHeight() - 20);
-                        suratKontrol.setLocationRelativeTo(parentFrame);
+                        suratKontrol.setLocationRelativeTo(internalFrame1);
                         
                         // Add listener untuk handle close
-                        suratKontrol.addWindowListener(new java.awt.event.WindowAdapter() {
-                            @Override
-                            public void windowClosed(java.awt.event.WindowEvent e) {
-                                if (parentFrame != null) {
-                                    parentFrame.setVisible(true);
-                                    parentFrame.toFront();
-                                }
-                                DlgEvaluasiPRB.this.setCursor(Cursor.getDefaultCursor());
-                            }
-                        });
+
+suratKontrol.addWindowListener(new java.awt.event.WindowAdapter() {
+    @Override
+    public void windowClosed(java.awt.event.WindowEvent e) {
+        if (internalFrame1 != null) {
+            internalFrame1.setVisible(true);
+//            internalFrame1.toFront();
+        }
+        DlgEvaluasiPRB.this.setVisible(true); // pastikan dialog utama muncul kembali
+        DlgEvaluasiPRB.this.setCursor(Cursor.getDefaultCursor());
+    }
+});
                         
                         suratKontrol.setVisible(true);
                         
                         // Dispose current dialog
-                        DlgEvaluasiPRB.this.dispose();
+                        //DlgEvaluasiPRB.this.dispose();
                         
                     } else {
                         // Data SEP tidak ditemukan
-                        JOptionPane.showMessageDialog(parentFrame, 
+                        JOptionPane.showMessageDialog(internalFrame1, 
                             "Pasien tersebut belum terbit SEP, silahkan hubungi bagian terkait..!!");
                         TCari.requestFocus();
                         DlgEvaluasiPRB.this.setVisible(true);
@@ -2723,14 +2794,14 @@ private void openBPJSSuratKontrol() {
                     
                 } catch (SQLException e) {
                     System.out.println("Database Error: " + e.getMessage());
-                    JOptionPane.showMessageDialog(parentFrame,
+                    JOptionPane.showMessageDialog(internalFrame1,
                         "Error mengambil data SEP: " + e.getMessage());
                     DlgEvaluasiPRB.this.setVisible(true);
                     DlgEvaluasiPRB.this.setCursor(Cursor.getDefaultCursor());
                     
                 } catch (Exception e) {
                     System.out.println("Error opening BPJSSuratKontrol: " + e.getMessage());
-                    JOptionPane.showMessageDialog(parentFrame,
+                    JOptionPane.showMessageDialog(internalFrame1,
                         "Tidak dapat membuka form surat kontrol: " + e.getMessage());
                     DlgEvaluasiPRB.this.setVisible(true);
                     DlgEvaluasiPRB.this.setCursor(Cursor.getDefaultCursor());
