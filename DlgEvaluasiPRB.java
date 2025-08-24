@@ -753,7 +753,7 @@ jLabel4.setBounds(405, 10, 90, 23);
     txtKeterangan.setName("txtKeterangan");
     javax.swing.JScrollPane scrollKeterangan = new javax.swing.JScrollPane(txtKeterangan);
     FormInput.add(scrollKeterangan);
-    scrollKeterangan.setBounds(83, 440, 655, 60);
+    scrollKeterangan.setBounds(83, 440, 655, 25);
 
     // Update FormInput preferred size:
     FormInput.setPreferredSize(new java.awt.Dimension(440, 520)); // Increase height
@@ -2593,7 +2593,7 @@ private void openBPJSProgramPRB() {
                     
                     if(rskasir.next()) {
                         // Hide current dialog
-                        DlgEvaluasiPRB.this.setVisible(false);
+                        DlgEvaluasiPRB.this.setVisible(true);
                         DlgEvaluasiPRB.this.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
                         
                         // Create BPJSProgramPRB dengan data - sesuai contoh
@@ -2744,7 +2744,7 @@ private void openBPJSSuratKontrol() {
                     
                     if(rskasir.next()) {
                         // Hide current dialog
-                        DlgEvaluasiPRB.this.setVisible(false);
+                        DlgEvaluasiPRB.this.setVisible(true);
                         DlgEvaluasiPRB.this.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
                         
                         // Create BPJSSuratKontrol dengan data
